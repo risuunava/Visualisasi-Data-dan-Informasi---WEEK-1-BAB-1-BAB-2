@@ -1,6 +1,7 @@
-produk,jumlah,harga
-Beras 5kg,12,74000
-Gula 1kg,20,17000
-Minyak 1L,15,21000
-Telur 1kg,18,28000
-Mi Instan,40,3500
+produk,kategori,jumlah,harga_modal,harga_jual
+Beras 5kg,Sembako,12,64000,74000
+Gula 1kg,Sembako,20,14000,17000
+Minyak 1L,Sembako,15,18000,21000
+Telur 1kg,Sembako,18,24000,28000
+Mi Instan,Makanan Instan,42,2800,3500
+Teh Botol,Minuman,25,3000,4000

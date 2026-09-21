@@ -1,0 +1,78 @@
+{
+    "detail_produk": [
+        {
+            "produk": "Beras 5kg",
+            "kategori": "Sembako",
+            "jumlah": 12,
+            "harga_modal": 64000,
+            "harga_jual": 74000,
+            "omzet": 888000,
+            "modal": 768000,
+            "laba": 120000
+        },
+        {
+            "produk": "Gula 1kg",
+            "kategori": "Sembako",
+            "jumlah": 20,
+            "harga_modal": 14000,
+            "harga_jual": 17000,
+            "omzet": 340000,
+            "modal": 280000,
+            "laba": 60000
+        },
+        {
+            "produk": "Minyak 1L",
+            "kategori": "Sembako",
+            "jumlah": 15,
+            "harga_modal": 18000,
+            "harga_jual": 21000,
+            "omzet": 315000,
+            "modal": 270000,
+            "laba": 45000
+        },
+        {
+            "produk": "Telur 1kg",
+            "kategori": "Sembako",
+            "jumlah": 18,
+            "harga_modal": 24000,
+            "harga_jual": 28000,
+            "omzet": 504000,
+            "modal": 432000,
+            "laba": 72000
+        },
+        {
+            "produk": "Mi Instan",
+            "kategori": "Makanan Instan",
+            "jumlah": 42,
+            "harga_modal": 2800,
+            "harga_jual": 3500,
+            "omzet": 147000,
+            "modal": 117600,
+            "laba": 29400
+        },
+        {
+            "produk": "Teh Botol",
+            "kategori": "Minuman",
+            "jumlah": 25,
+            "harga_modal": 3000,
+            "harga_jual": 4000,
+            "omzet": 100000,
+            "modal": 75000,
+            "laba": 25000
+        }
+    ],
+    "ringkasan": {
+        "total_omzet": 2294000,
+        "total_modal": 1942600,
+        "total_laba": 351400,
+        "rata_rata_omzet": 382333.3333333333,
+        "nilai_maksimum": 888000,
+        "nilai_minimum": 100000,
+        "produk_terlaris": "Mi Instan",
+        "jumlah_terjual_terlaris": 42,
+        "produk_omzet_tertinggi": "Beras 5kg",
+        "produk_omzet_terendah": "Teh Botol",
+        "produk_laba_tertinggi": "Beras 5kg",
+        "laba_tertinggi": 120000
+    }
+}
