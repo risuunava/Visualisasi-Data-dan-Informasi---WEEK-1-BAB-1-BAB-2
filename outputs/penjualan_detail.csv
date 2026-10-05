@@ -1,7 +1,11 @@
-produk,kategori,jumlah,harga_modal,harga_jual,modal,omzet,laba
-Beras 5kg,Sembako,12,64000,74000,768000,888000,120000
-Gula 1kg,Sembako,20,14000,17000,280000,340000,60000
-Minyak 1L,Sembako,15,18000,21000,270000,315000,45000
-Telur 1kg,Sembako,18,24000,28000,432000,504000,72000
-Mi Instan,Makanan Instan,42,2800,3500,117600,147000,29400
-Teh Botol,Minuman,25,3000,4000,75000,100000,25000
+produk,kategori,jumlah,harga_modal,harga_jual,omzet,laba,margin_persen
+Beras 5kg,Sembako,12,64000,74000,888000,120000,13.51
+Gula 1kg,Sembako,20,14000,17000,340000,60000,17.65
+Minyak 1L,Sembako,15,18000,21000,315000,45000,14.29
+Telur 1kg,Sembako,18,24000,28000,504000,72000,14.29
+Mi Instan,Makanan Instan,42,2800,3500,147000,29400,20.0
+Teh Botol,Minuman,25,3000,4000,100000,25000,25.0
+Rokok,Sembako,20,22000,25000,500000,60000,12.0
+Es krim,Makanan Instan,12,5000,6000,72000,12000,16.67
+Salonpas,Sembako,12,3000,4000,48000,12000,25.0
+Air Mineral,Minuman,12,5000,6000,72000,12000,16.67

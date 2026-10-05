@@ -1,13 +1,12 @@
 metrik,nilai
-total_omzet,2294000
-total_modal,1942600
-total_laba,351400
-rata_rata_omzet,382333.3333333333
-nilai_maksimum,888000
-nilai_minimum,100000
+total_omzet,2986000
+total_modal,2538600
+total_laba,447400
+rata_rata_omzet,298600.0
+rata_rata_laba,44740.0
 produk_terlaris,Mi Instan
 jumlah_terjual_terlaris,42
 produk_omzet_tertinggi,Beras 5kg
-produk_omzet_terendah,Teh Botol
+produk_omzet_terendah,Salonpas
 produk_laba_tertinggi,Beras 5kg
-laba_tertinggi,120000
+produk_laba_terendah,Es krim

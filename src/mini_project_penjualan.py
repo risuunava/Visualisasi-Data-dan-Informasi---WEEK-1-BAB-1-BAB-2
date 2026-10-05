@@ -1,354 +1,313 @@
+"""Mini Project 1 - Analisis Penjualan Toko Kecil.
+
+Sumber data: data/raw/penjualan.csv
+Mode: 1) baca CSV -> laporan | 2) input manual -> append ke CSV -> laporan.
+Output selalu ditulis ulang di outputs/: penjualan_detail.csv, ringkasan_penjualan.csv, penjualan.json.
+"""
+
 import csv
 import json
-import os
+import re
+from pathlib import Path
 
-# =========================================================
-# MINI PROJECT 1 — VERSI LANJUTAN
-# Python Dasar untuk Mengolah Data Sederhana
-# Studi kasus: data penjualan toko kecil
-#
-# Penambahan dari versi dasar:
-# 1. Validasi input (jumlah & harga tidak boleh negatif)
-# 2. Fitur kategori produk (Sembako, Minuman, Makanan Instan, dst)
-# 3. Perhitungan laba (harga_modal vs harga_jual)
-# 4. Simpan hasil ke JSON selain CSV
-# 5. Kode dipecah jadi fungsi-fungsi kecil (modular)
-# 6. Mode interaktif: input data lewat input()
-# =========================================================
+BASE_DIR = Path(__file__).resolve().parent.parent
+INPUT_CSV = BASE_DIR / "data" / "raw" / "penjualan.csv"
+OUTPUT_DIR = BASE_DIR / "outputs"
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-INPUT_CSV = os.path.join(BASE_DIR, "data", "raw", "penjualan.csv")
-OUTPUT_DETAIL_CSV = os.path.join(BASE_DIR, "outputs", "penjualan_detail.csv")
-OUTPUT_RINGKASAN_CSV = os.path.join(BASE_DIR, "outputs", "ringkasan_penjualan.csv")
-OUTPUT_JSON = os.path.join(BASE_DIR, "outputs", "penjualan.json")
+KATEGORI_VALID = ["Sembako", "Minuman", "Makanan ringan", "Makanan Instan"]
+FIELDNAMES = ["produk", "kategori", "jumlah", "harga_modal", "harga_jual",
+              "omzet", "laba", "margin_persen"]
+HEADER_RAW_BARU = ["produk", "kategori", "jumlah", "harga_modal", "harga_jual"]
+KOLOM_WAJIB = ["produk", "kategori", "jumlah", "harga_modal"]  # + harga / harga_jual
 
 
-# =========================================================
-# 1. VALIDASI INPUT
-# =========================================================
-
-def validasi_item(produk, kategori, jumlah, harga_modal, harga_jual):
-    """
-    Mengecek satu baris data penjualan.
-    Mengembalikan (True, "") kalau valid, atau (False, pesan_error) kalau tidak.
-    """
-    if jumlah < 0:
-        return False, f"Jumlah tidak boleh negatif (produk: {produk}, jumlah: {jumlah})"
-    if harga_modal < 0:
-        return False, f"Harga modal tidak boleh negatif (produk: {produk})"
-    if harga_jual < 0:
-        return False, f"Harga jual tidak boleh negatif (produk: {produk})"
-    if not produk.strip():
-        return False, "Nama produk tidak boleh kosong"
-    if not kategori.strip():
-        return False, f"Kategori tidak boleh kosong (produk: {produk})"
-    return True, ""
+# --- Validasi ---
+def bersihkan_angka(nilai):
+    """Buang 'Rp', spasi, dan titik pemisah ribuan ('15.000' -> '15000')."""
+    teks = re.sub(r"(?i)rp|\s", "", str(nilai).strip())
+    return teks.replace(".", "") if re.fullmatch(r"\d{1,3}(\.\d{3})+", teks) else teks
 
 
-# =========================================================
-# 2 & 3. BACA DATA (dengan kategori & harga modal) DARI CSV
-# =========================================================
+def validasi_angka_tidak_negatif(nilai, nama_field):
+    """Pastikan nilai angka dan tidak negatif."""
+    try:
+        angka = float(bersihkan_angka(nilai))
+    except (ValueError, TypeError):
+        raise ValueError(f"{nama_field} harus berupa angka, bukan '{nilai}'") from None
+    if angka < 0:
+        raise ValueError(f"{nama_field} tidak boleh negatif (diterima: {angka:g})")
+    return int(angka) if angka == int(angka) else angka
+
+
+def validasi_kategori(kategori):
+    """Cocokkan kategori dengan KATEGORI_VALID (tidak peka huruf besar/kecil)."""
+    cocok = next((v for v in KATEGORI_VALID if str(kategori).strip().lower() == v.lower()), None)
+    if cocok is None:
+        raise ValueError(f"Kategori '{kategori}' tidak dikenal. Pilihan: {', '.join(KATEGORI_VALID)}")
+    return cocok
+
+
+def validasi_produk(produk, kategori, jumlah, harga_modal, harga_jual):
+    """Validasi satu produk, kembalikan dictionary bersih."""
+    nama = str(produk).strip()
+    if not nama:
+        raise ValueError("Nama produk tidak boleh kosong")
+    return {
+        "produk": nama,
+        "kategori": validasi_kategori(kategori),
+        "jumlah": validasi_angka_tidak_negatif(jumlah, "Jumlah"),
+        "harga_modal": validasi_angka_tidak_negatif(harga_modal, "Harga modal"),
+        "harga_jual": validasi_angka_tidak_negatif(harga_jual, "Harga jual"),
+    }
+
+
+# --- Membaca CSV ---
+def cek_header(fieldnames):
+    """Pastikan kolom wajib ada. Kembalikan nama kolom harga jual ('harga'/'harga_jual')."""
+    kolom = [f.strip().lower() for f in (fieldnames or [])]
+    kolom_harga = "harga_jual" if "harga_jual" in kolom else "harga" if "harga" in kolom else None
+    kurang = [k for k in KOLOM_WAJIB if k not in kolom]
+    if kolom_harga is None:
+        kurang.append("harga_jual (atau harga)")
+    if kurang:
+        raise ValueError(
+            "Kolom CSV kurang: " + ", ".join(kurang)
+            + "\n  Header yang dibutuhkan: produk,kategori,jumlah,harga_modal,harga_jual")
+    return kolom_harga
+
 
 def baca_data_csv(path):
-    """
-    Membaca file CSV dan mengembalikan list data yang SUDAH divalidasi.
-    Baris yang tidak valid akan dilewati, dengan pesan peringatan ke layar.
-    """
-    data_penjualan = []
-
-    with open(path, "r", encoding="utf-8") as file:
+    """Baca CSV, validasi tiap baris. Baris tidak valid dilewati dengan peringatan."""
+    data = []
+    with open(path, "r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
-        for nomor_baris, row in enumerate(reader, start=2):  # baris 1 = header
-            produk = row["produk"]
-            kategori = row["kategori"]
-            jumlah = int(row["jumlah"])
-            harga_modal = int(row["harga_modal"])
-            harga_jual = int(row["harga_jual"])
-
-            valid, pesan = validasi_item(produk, kategori, jumlah, harga_modal, harga_jual)
-            if not valid:
-                print(f"[Dilewati] Baris {nomor_baris}: {pesan}")
-                continue
-
-            data_penjualan.append({
-                "produk": produk,
-                "kategori": kategori,
-                "jumlah": jumlah,
-                "harga_modal": harga_modal,
-                "harga_jual": harga_jual,
-            })
-
-    return data_penjualan
-
-
-# =========================================================
-# 3. FUNGSI PERHITUNGAN: OMZET & LABA
-# =========================================================
-
-def hitung_omzet_produk(jumlah, harga_jual):
-    return jumlah * harga_jual
-
-
-def hitung_modal_produk(jumlah, harga_modal):
-    return jumlah * harga_modal
-
-
-def hitung_laba_produk(omzet, modal):
-    return omzet - modal
-
-
-def proses_data(data):
-    """
-    Menambahkan kolom omzet, modal, dan laba ke setiap item.
-    """
-    for item in data:
-        omzet = hitung_omzet_produk(item["jumlah"], item["harga_jual"])
-        modal = hitung_modal_produk(item["jumlah"], item["harga_modal"])
-        laba = hitung_laba_produk(omzet, modal)
-
-        item["omzet"] = omzet
-        item["modal"] = modal
-        item["laba"] = laba
+        kolom_harga = cek_header(reader.fieldnames)
+        for no_baris, row in enumerate(reader, start=2):  # baris 1 = header
+            row = {(k or "").strip().lower(): v for k, v in row.items()}
+            try:
+                data.append(validasi_produk(
+                    row["produk"], row["kategori"], row["jumlah"],
+                    row["harga_modal"], row[kolom_harga]))
+            except (ValueError, KeyError, AttributeError) as e:
+                print(f"  [!] Baris {no_baris} dilewati: {e}")
     return data
 
 
-# =========================================================
-# FUNGSI AGREGASI / RINGKASAN
-# =========================================================
-
-def hitung_total(data, kunci):
-    return sum(item[kunci] for item in data)
-
-
-def hitung_rata_rata(data, kunci):
-    if len(data) == 0:
-        return 0
-    return hitung_total(data, kunci) / len(data)
-
-
-def cari_item_tertinggi(data, kunci):
-    tertinggi = data[0]
-    for item in data:
-        if item[kunci] > tertinggi[kunci]:
-            tertinggi = item
-    return tertinggi
-
-
-def cari_item_terendah(data, kunci):
-    terendah = data[0]
-    for item in data:
-        if item[kunci] < terendah[kunci]:
-            terendah = item
-    return terendah
-
-
-def hitung_ringkasan(data):
-    """
-    Mengembalikan satu dictionary berisi seluruh metrik ringkasan.
-    """
-    produk_omzet_tertinggi = cari_item_tertinggi(data, "omzet")
-    produk_omzet_terendah = cari_item_terendah(data, "omzet")
-    produk_terlaris = cari_item_tertinggi(data, "jumlah")
-    produk_laba_tertinggi = cari_item_tertinggi(data, "laba")
-
-    return {
-        "total_omzet": hitung_total(data, "omzet"),
-        "total_modal": hitung_total(data, "modal"),
-        "total_laba": hitung_total(data, "laba"),
-        "rata_rata_omzet": hitung_rata_rata(data, "omzet"),
-        "nilai_maksimum": produk_omzet_tertinggi["omzet"],
-        "nilai_minimum": produk_omzet_terendah["omzet"],
-        "produk_terlaris": produk_terlaris["produk"],
-        "jumlah_terjual_terlaris": produk_terlaris["jumlah"],
-        "produk_omzet_tertinggi": produk_omzet_tertinggi["produk"],
-        "produk_omzet_terendah": produk_omzet_terendah["produk"],
-        "produk_laba_tertinggi": produk_laba_tertinggi["produk"],
-        "laba_tertinggi": produk_laba_tertinggi["laba"],
-    }
-
-
-# =========================================================
-# TAMPILAN
-# =========================================================
-
-def tampilkan_hasil(data, ringkasan):
-    print("=" * 70)
-    print("RINGKASAN DATA PENJUALAN TOKO KECIL")
-    print("=" * 70)
-    for item in data:
-        print(
-            f'Produk: {item["produk"]:<14} | '
-            f'Kategori: {item["kategori"]:<15} | '
-            f'Jumlah: {item["jumlah"]:>3} | '
-            f'Omzet: Rp{item["omzet"]:>9,} | '
-            f'Laba: Rp{item["laba"]:>8,}'
-        )
-    print("-" * 70)
-    print(f"Total omzet          : Rp{ringkasan['total_omzet']:,.0f}")
-    print(f"Total modal          : Rp{ringkasan['total_modal']:,.0f}")
-    print(f"Total laba           : Rp{ringkasan['total_laba']:,.0f}")
-    print(f"Rata-rata omzet      : Rp{ringkasan['rata_rata_omzet']:,.2f}")
-    print(f"Nilai maksimum       : Rp{ringkasan['nilai_maksimum']:,.0f}")
-    print(f"Nilai minimum        : Rp{ringkasan['nilai_minimum']:,.0f}")
-    print(f"Produk terlaris      : {ringkasan['produk_terlaris']} "
-          f"({ringkasan['jumlah_terjual_terlaris']} unit)")
-    print(f"Omzet tertinggi      : {ringkasan['produk_omzet_tertinggi']} "
-          f"(Rp{ringkasan['nilai_maksimum']:,.0f})")
-    print(f"Omzet terendah       : {ringkasan['produk_omzet_terendah']} "
-          f"(Rp{ringkasan['nilai_minimum']:,.0f})")
-    print(f"Laba tertinggi       : {ringkasan['produk_laba_tertinggi']} "
-          f"(Rp{ringkasan['laba_tertinggi']:,.0f})")
-    print("=" * 70)
-
-
-# =========================================================
-# 4. SIMPAN HASIL: CSV & JSON
-# =========================================================
-
-def simpan_detail_csv(data, path):
-    fieldnames = ["produk", "kategori", "jumlah", "harga_modal", "harga_jual", "modal", "omzet", "laba"]
-    with open(path, "w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in data:
-            writer.writerow(item)
-
-
-def simpan_ringkasan_csv(ringkasan, path):
-    with open(path, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(["metrik", "nilai"])
-        for metrik, nilai in ringkasan.items():
-            writer.writerow([metrik, nilai])
-
-
-def simpan_json(data, ringkasan, path):
-    """
-    Menyimpan detail produk + ringkasan dalam satu struktur JSON.
-    JSON dipilih karena strukturnya (list of dict + dict) sangat mirip
-    dengan struktur data Python asli, dan lazim dipakai untuk API/aplikasi modern.
-    """
-    hasil = {
-        "detail_produk": data,
-        "ringkasan": ringkasan,
-    }
-    with open(path, "w", encoding="utf-8") as file:
-        json.dump(hasil, file, indent=4, ensure_ascii=False)
-
-
-def simpan_semua_hasil(data, ringkasan):
-    os.makedirs(os.path.join(BASE_DIR, "outputs"), exist_ok=True)
-    simpan_detail_csv(data, OUTPUT_DETAIL_CSV)
-    simpan_ringkasan_csv(ringkasan, OUTPUT_RINGKASAN_CSV)
-    simpan_json(data, ringkasan, OUTPUT_JSON)
-
-    print("\nFile berhasil disimpan:")
-    print("-", OUTPUT_DETAIL_CSV)
-    print("-", OUTPUT_RINGKASAN_CSV)
-    print("-", OUTPUT_JSON)
-
-
-# =========================================================
-# 6. MODE INTERAKTIF: INPUT DATA LEWAT input()
-# =========================================================
-
-def input_angka(pesan, boleh_negatif=False):
-    """
-    Meminta input angka ke user, mengulang terus sampai valid.
-    Dipakai untuk jumlah, harga_modal, harga_jual agar validasi konsisten
-    dengan validasi_item() di atas.
-    """
+# --- Input interaktif ---
+def minta_input_angka(pesan, nama_field):
+    """Ulangi pertanyaan sampai angka valid (tidak negatif)."""
     while True:
-        nilai_teks = input(pesan)
         try:
-            nilai = int(nilai_teks)
-        except ValueError:
-            print("  -> Input harus berupa angka bulat. Coba lagi.")
-            continue
+            return validasi_angka_tidak_negatif(input(pesan), nama_field)
+        except ValueError as e:
+            print(f"  [!] {e}. Silakan coba lagi.")
 
-        if not boleh_negatif and nilai < 0:
-            print("  -> Nilai tidak boleh negatif. Coba lagi.")
-            continue
 
-        return nilai
+def minta_input_kategori():
+    """Menu kategori bernomor, ulangi sampai valid."""
+    while True:
+        print("  Kategori:", ", ".join(f"{i}. {k}" for i, k in enumerate(KATEGORI_VALID, 1)))
+        pilihan = input("  Pilih nomor kategori: ").strip()
+        if pilihan.isdigit() and 1 <= int(pilihan) <= len(KATEGORI_VALID):
+            return KATEGORI_VALID[int(pilihan) - 1]
+        print("  [!] Pilihan tidak valid.")
 
 
 def input_data_interaktif():
-    """
-    Meminta user memasukkan data penjualan satu per satu lewat input().
-    Ketik nama produk kosong (Enter langsung) untuk berhenti.
-    """
-    data_penjualan = []
-    print("=== INPUT DATA PENJUALAN (mode interaktif) ===")
-    print("Kosongkan nama produk lalu Enter untuk selesai.\n")
-
-    nomor = 1
+    """Minta produk satu per satu. Enter kosong atau 'selesai' untuk berhenti."""
+    data = []
+    print("\n=== INPUT DATA PENJUALAN ===")
+    print("Kosongkan nama produk lalu Enter (atau ketik 'selesai') untuk berhenti.")
     while True:
-        produk = input(f"[{nomor}] Nama produk: ").strip()
-        if produk == "":
+        nama = input(f"\n[{len(data) + 1}] Nama produk: ").strip()
+        if nama == "" or nama.lower() == "selesai":
             break
-
-        kategori = input("    Kategori (Sembako/Minuman/Makanan Instan/dst): ").strip()
-        jumlah = input_angka("    Jumlah terjual: ")
-        harga_modal = input_angka("    Harga modal per unit (Rp): ")
-        harga_jual = input_angka("    Harga jual per unit (Rp): ")
-
-        valid, pesan = validasi_item(produk, kategori, jumlah, harga_modal, harga_jual)
-        if not valid:
-            print(f"    -> Data ditolak: {pesan}\n")
-            continue
-
-        data_penjualan.append({
-            "produk": produk,
-            "kategori": kategori,
-            "jumlah": jumlah,
-            "harga_modal": harga_modal,
-            "harga_jual": harga_jual,
-        })
-        print(f"    -> '{produk}' berhasil ditambahkan.\n")
-        nomor += 1
-
-    return data_penjualan
+        data.append(validasi_produk(
+            nama, minta_input_kategori(),
+            minta_input_angka("  Jumlah terjual: ", "Jumlah"),
+            minta_input_angka("  Harga modal satuan (Rp): ", "Harga modal"),
+            minta_input_angka("  Harga jual satuan (Rp): ", "Harga jual"),
+        ))
+        print(f"  [v] '{nama}' ditambahkan.")
+    return data
 
 
-# =========================================================
-# 5. PROGRAM UTAMA (MODULAR)
-# =========================================================
+# --- Perhitungan ---
+def tambah_kolom_hitungan(data):
+    """Tambahkan kolom omzet, laba, dan margin (%) ke tiap produk."""
+    for item in data:
+        item["omzet"] = item["jumlah"] * item["harga_jual"]
+        item["laba"] = item["jumlah"] * (item["harga_jual"] - item["harga_modal"])
+        item["margin_persen"] = round(item["laba"] / item["omzet"] * 100, 2) if item["omzet"] else 0
+    return data
 
-def jalankan_dari_csv():
-    data = baca_data_csv(INPUT_CSV)
+
+def ringkas_per_kategori(data):
+    """Kelompokkan per kategori: jumlah produk, unit, omzet, laba."""
+    hasil = {}
+    for item in data:
+        k = hasil.setdefault(item["kategori"], {"jumlah_produk": 0, "total_unit": 0,
+                                                "total_omzet": 0, "total_laba": 0})
+        k["jumlah_produk"] += 1
+        k["total_unit"] += item["jumlah"]
+        k["total_omzet"] += item["omzet"]
+        k["total_laba"] += item["laba"]
+    return hasil
+
+
+def buat_ringkasan(data):
+    """Kumpulkan semua metrik penting dalam satu dictionary."""
+    total_omzet = sum(i["omzet"] for i in data)
+    total_laba = sum(i["laba"] for i in data)
+    terlaris = max(data, key=lambda i: i["jumlah"])
+    omzet_max = max(data, key=lambda i: i["omzet"])["produk"]
+    omzet_min = min(data, key=lambda i: i["omzet"])["produk"]
+    laba_max = max(data, key=lambda i: i["laba"])["produk"]
+    laba_min = min(data, key=lambda i: i["laba"])["produk"]
+    return {
+        "total_omzet": total_omzet,
+        "total_modal": total_omzet - total_laba,
+        "total_laba": total_laba,
+        "rata_rata_omzet": total_omzet / len(data) if data else 0,
+        "rata_rata_laba": total_laba / len(data) if data else 0,
+        "produk_terlaris": terlaris["produk"],
+        "jumlah_terjual_terlaris": terlaris["jumlah"],
+        "produk_omzet_tertinggi": omzet_max,
+        "produk_omzet_terendah": omzet_min,
+        "produk_laba_tertinggi": laba_max,
+        "produk_laba_terendah": laba_min,
+        "per_kategori": ringkas_per_kategori(data),
+    }
+
+
+# --- Tampilan ---
+def tampilkan_laporan(data, ringkasan, judul):
+    garis = "=" * 96
+    print("\n" + garis)
+    print(judul)
+    print(garis)
+    print(f"{'Produk':<18}{'Kategori':<16}{'Jml':>5}{'Omzet (Rp)':>14}{'Laba (Rp)':>14}{'Margin':>9}")
+    print("-" * 96)
+    for i in data:
+        print(f"{i['produk']:<18}{i['kategori']:<16}{i['jumlah']:>5}"
+              f"{i['omzet']:>14,.0f}{i['laba']:>14,.0f}{i['margin_persen']:>8.1f}%")
+    print("-" * 96)
+    print(f"Total omzet            : Rp{ringkasan['total_omzet']:,.0f}")
+    print(f"Total modal            : Rp{ringkasan['total_modal']:,.0f}")
+    print(f"Total laba             : Rp{ringkasan['total_laba']:,.0f}")
+    print(f"Rata-rata omzet        : Rp{ringkasan['rata_rata_omzet']:,.2f}")
+    print(f"Rata-rata laba         : Rp{ringkasan['rata_rata_laba']:,.2f}")
+    print(f"Produk terlaris        : {ringkasan['produk_terlaris']} ({ringkasan['jumlah_terjual_terlaris']} unit)")
+    print(f"Omzet tertinggi        : {ringkasan['produk_omzet_tertinggi']}")
+    print(f"Omzet terendah         : {ringkasan['produk_omzet_terendah']}")
+    print(f"Laba tertinggi         : {ringkasan['produk_laba_tertinggi']}")
+    print(f"Laba terendah          : {ringkasan['produk_laba_terendah']}")
+    print("\nRingkasan per kategori:")
+    for nama, k in ringkasan["per_kategori"].items():
+        print(f"  - {nama:<15}: {k['jumlah_produk']} produk | {k['total_unit']} unit | "
+              f"omzet Rp{k['total_omzet']:,.0f} | laba Rp{k['total_laba']:,.0f}")
+    print(garis)
+
+
+# --- Penyimpanan ---
+def tambah_ke_raw(data_baru, path):
+    """Tambahkan produk baru ke BAWAH CSV (mode 'a'). Ikuti header asli ('harga'/'harga_jual')."""
+    path = Path(path)
+    if not (path.exists() and path.stat().st_size > 0):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=HEADER_RAW_BARU)
+            writer.writeheader()
+            writer.writerows(data_baru)
+        return
+
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        header = next(csv.reader(f), [])
+    kolom_harga = cek_header(header)  # error jika kolom wajib kurang
+    perlu_enter = Path(path).read_bytes()[-1:] not in (b"\n", b"\r")
+
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        if perlu_enter:
+            f.write("\r\n")
+        writer = csv.writer(f)
+        for item in data_baru:
+            nilai = {"produk": item["produk"], "kategori": item["kategori"],
+                     "jumlah": item["jumlah"], "harga_modal": item["harga_modal"],
+                     kolom_harga: item["harga_jual"]}
+            writer.writerow([nilai.get(k.strip().lower(), "") for k in header])
+
+
+def proses_dan_simpan(data, judul):
+    """Hitung, tampilkan, dan simpan hasil ke outputs/ (dipakai kedua opsi)."""
+    data = tambah_kolom_hitungan(data)
+    ringkasan = buat_ringkasan(data)
+    tampilkan_laporan(data, ringkasan, judul)
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_DIR / "penjualan_detail.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(data)
+    with open(OUTPUT_DIR / "ringkasan_penjualan.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["metrik", "nilai"])
+        writer.writerows([k, v] for k, v in ringkasan.items() if k != "per_kategori")
+    with open(OUTPUT_DIR / "penjualan.json", "w", encoding="utf-8") as f:
+        json.dump({"detail_produk": data, "ringkasan": ringkasan}, f, indent=4, ensure_ascii=False)
+    print("\nFile disimpan di outputs/: penjualan_detail.csv, ringkasan_penjualan.csv, penjualan.json")
+
+
+# --- Alur per opsi ---
+def jalankan_opsi_1():
+    """Opsi 1: baca data/raw/penjualan.csv."""
+    if not INPUT_CSV.exists():
+        print(f"File tidak ditemukan: {INPUT_CSV}")
+        print("Jalankan opsi 2 untuk membuatnya.")
+        return
+    try:
+        data = baca_data_csv(INPUT_CSV)
+    except ValueError as e:
+        print(f"[ERROR] {e}")
+        return
     if not data:
         print("Tidak ada data valid untuk diproses.")
         return
-    data = proses_data(data)
-    ringkasan = hitung_ringkasan(data)
-    tampilkan_hasil(data, ringkasan)
-    simpan_semua_hasil(data, ringkasan)
+    proses_dan_simpan(data, f"RINGKASAN PENJUALAN ({len(data)} produk dari data/raw/penjualan.csv)")
 
 
-def jalankan_interaktif():
-    data = input_data_interaktif()
-    if not data:
-        print("Tidak ada data yang dimasukkan.")
+def jalankan_opsi_2():
+    """Opsi 2: input manual -> ditambahkan ke data/raw/penjualan.csv -> outputs diperbarui."""
+    data_baru = input_data_interaktif()
+    if not data_baru:
+        print("Tidak ada data yang dimasukkan. File tidak diubah.")
         return
-    data = proses_data(data)
-    ringkasan = hitung_ringkasan(data)
-    tampilkan_hasil(data, ringkasan)
-    simpan_semua_hasil(data, ringkasan)
+    try:
+        tambah_ke_raw(data_baru, INPUT_CSV)
+        data = baca_data_csv(INPUT_CSV)  # baca ulang SEMUA data (lama + baru)
+    except ValueError as e:
+        print(f"[ERROR] {e}")
+        return
+    print(f"\n{len(data_baru)} produk baru ditambahkan ke data/raw/penjualan.csv")
+    proses_dan_simpan(data, f"RINGKASAN SEMUA DATA ({len(data)} produk di data/raw/penjualan.csv)")
+
+
+# --- Program utama ---
+def pilih_mode():
+    print("=== MINI PROJECT PENJUALAN ===")
+    print("1. Baca data dari file CSV (data/raw/penjualan.csv)")
+    print("2. Input data manual (ditambahkan ke data/raw/penjualan.csv)")
+    while True:
+        pilihan = input("Pilih mode (1/2): ").strip()
+        if pilihan in ("1", "2"):
+            return pilihan
+        print("  [!] Masukkan 1 atau 2.")
 
 
 def main():
-    print("Pilih mode:")
-    print("1. Baca data dari file CSV (data/raw/penjualan.csv)")
-    print("2. Input data manual lewat keyboard (interaktif)")
-    pilihan = input("Masukkan pilihan (1/2): ").strip()
-
-    if pilihan == "1":
-        jalankan_dari_csv()
-    elif pilihan == "2":
-        jalankan_interaktif()
-    else:
-        print("Pilihan tidak dikenali. Program dihentikan.")
+    try:
+        jalankan_opsi_1() if pilih_mode() == "1" else jalankan_opsi_2()
+    except KeyboardInterrupt:
+        print("\n\nProgram dihentikan (Ctrl+C). Data sesi ini belum disimpan.")
 
 
 if __name__ == "__main__":
